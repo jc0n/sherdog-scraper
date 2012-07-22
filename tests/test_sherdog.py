@@ -25,7 +25,7 @@ class TestSherdog(TestCase):
             weight = f.weight.split()
             self.assertAlmostEquals(int(weight[0]), 260, delta=25)
             self.assertEquals(weight[1], u'lbs')
-            self.assertEquals(f.city, u'Las Vegas, Nevada')
+            self.assertEquals(f.locality, u'Las Vegas, Nevada')
             self.assertEquals(f.country, u'United States')
             self.assertTrue(f.country_flag_url.endswith('us.png'))
             self.assertGreater(f.wins, 15)
