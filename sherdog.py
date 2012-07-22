@@ -16,16 +16,13 @@ from datetime import timedelta, datetime
 
 # dependencies
 import iso8601
-from BeautifulSoup import BeautifulSoup
+from bs4 import BeautifulSoup
 
 __all__ = ('Sherdog', 'Event', 'Fight', 'Fighter', 'Organization')
 
 SHERDOG_URL = 'http://www.sherdog.com'
 
-_EVENT_MATCH_RE = re.compile('module event_match')
 _EVEN_ODD_RE = re.compile('^(even)|(odd)$')
-_FIGHTER_LEFT_RE = re.compile('fighter left_side')
-_FIGHTER_RIGHT_RE = re.compile('fighter right_side')
 _FINAL_RESULT_RE = re.compile('^final_result')
 _SUB_EVENT_RE = re.compile('subEvent')
 
@@ -33,6 +30,95 @@ _EVENTS_URL_RE = re.compile('^/events/')
 _FIGHTER_URL_RE = re.compile('^/fighter/')
 
 _SECONDS_IN_YEAR = 60 * 60 * 24 * 365
+
+class Sherdog(object):
+    """
+    A simple web-scraping API for Sherdog.com.
+    """
+
+    @classmethod
+    def fetch_url(cls, path):
+        """
+        Fetches a URL from sherdog.com by its path
+        """
+        assert path.startswith('/')
+        url = SHERDOG_URL + path
+        handle = urllib.urlopen(url)
+        data = handle.read()
+        handle.close()
+        return data
+
+    @classmethod
+    def fetch_and_parse_url(cls, path):
+        """
+        Fetches a URL from sherdog.com and returns a BeautifulSoup object
+        representing the parsed dom.
+        """
+        assert path.startswith('/')
+        result = cls.fetch_url(path)
+        soup = BeautifulSoup(result)
+        return soup
+
+    @classmethod
+    def get_fighter(cls, id_or_url):
+        """
+        Returns a `Fighter` object using either the numerical ID
+        or the URL path on sherdog.com
+
+        See `Fighter`.
+        """
+        return Fighter(id_or_url)
+
+    @classmethod
+    def get_event(cls, id_or_url):
+        """
+        Returns an `Event` object using either the numerical ID
+        or the URL path on sherdog.com
+
+        See `Event`.
+        """
+        return Event(id_or_url)
+
+    @classmethod
+    def get_organization(cls, id_or_url):
+        """
+        Returns an `Organization` object using either its numerical ID
+        or the URL path on sherdog.com
+
+        See `Organization`.
+        """
+        return Organization(id_or_url)
+
+    @classmethod
+    def search_events(cls, name):
+        """
+        Searches for events by name.
+
+        Returns:
+            A list of `Event` objects.
+        """
+        return Event.search(name)
+
+    @classmethod
+    def search_organizations(cls, name):
+        """
+        Searches for organizations by name.
+
+        Returns:
+            A list of `Organization` objects.
+        """
+        return Organization.search(name)
+
+    @classmethod
+    def search_fighters(cls, name):
+        """
+        Searches for fighters by name.
+
+        Returns:
+            A list of `Fighter` objects.
+        """
+        return Fighter.search(name)
+
 
 class LazySherdogObject(object):
     """
@@ -123,7 +209,7 @@ class Organization(LazySherdogObject):
 
     def _parse_events(self, dom):
         table = dom.find('table', {'class': 'event'})
-        rows = table.findAll('tr', {'class': _EVEN_ODD_RE})
+        rows = table.find_all('tr', {'class': _EVEN_ODD_RE})
         events = []
         for row in rows:
             datestr = row.find('meta', {'itemprop': 'startDate'})['content']
@@ -210,7 +296,7 @@ class Fighter(LazySherdogObject):
         query = urllib.quote(query.lower())
         dom = Sherdog.fetch_and_parse_url(cls.search_url_path_template % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
-        urls = [a['href'] for a in table.findAll('a')]
+        urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_FIGHTER_URL_RE.match, urls))
 
     def _parse_basic_info(self, dom):
@@ -272,7 +358,7 @@ class Fighter(LazySherdogObject):
     def _parse_events(self, dom):
         content = dom.find('div', {'class': 'content table'})
         if content and hasattr(content, 'table'):
-            event_links = content.table.findAll('a', {'href': _EVENTS_URL_RE})
+            event_links = content.table.find_all('a', {'href': _EVENTS_URL_RE})
             self.events = [Event(a['href']) for a in event_links]
 
     def _load_properties(self):
@@ -283,9 +369,18 @@ class Fighter(LazySherdogObject):
         self._parse_events(dom)
 
 
-class Fight(namedtuple('Fight', ('event', 'fighters', 'match',
-                                 'method', 'referee', 'round',
-                                 'time', 'winner'))):
+_Fight = namedtuple('_Fight', (
+    'event',
+    'fighters',
+    'match',
+    'method',
+    'referee',
+    'round',
+    'time',
+    'winner'
+    ))
+
+class Fight(_Fight):
     """
     Represents one fight from an event which may have multiple fights. If the
     fight has already happened the object will contain the results.
@@ -300,7 +395,6 @@ class Fight(namedtuple('Fight', ('event', 'fighters', 'match',
         time: The total time of the fight.
         winner: A `Fighter` object representing the winning fighter.
     """
-
     def __repr__(self):
         return u' vs. '.join([f.name.split(None, 1)[-1].title()
                                 for f in self.fighters])
@@ -346,10 +440,10 @@ class Event(LazySherdogObject):
             return right
 
     def _parse_main_fight(self, dom):
-        left = dom.find('div', {'class': _FIGHTER_LEFT_RE}).h3.a
+        left = dom.find('div', {'class': 'fighter left_side'}).h3.a
         left_fighter = Fighter(left['href'], name=left.text)
 
-        right = dom.find('div', {'class': _FIGHTER_RIGHT_RE}).h3.a
+        right = dom.find('div', {'class': 'fighter right_side'}).h3.a
         right_fighter = Fighter(right['href'], name=right.text)
 
         fighters = (left_fighter, right_fighter)
@@ -360,7 +454,7 @@ class Event(LazySherdogObject):
                     round=None, time=None)
 
         # parse match, method, ref, round, time
-        td = dom.find('table', {'class':'resume'}).findAll('td')
+        td = dom.find('table', {'class':'resume'}).find_all('td')
         keys = [x.contents[0].text.lower() for x in td]
         values = [x.contents[-1].lstrip() for x in td]
         info = dict(zip(keys, values))
@@ -371,7 +465,7 @@ class Event(LazySherdogObject):
                 referee=info['referee'], round=int(info['round']), time=time)
 
     def _parse_sub_fight(self, row):
-        td = row.findAll('td')
+        td = row.find_all('td')
         left, right = td[1].a, td[3].a
         left_fighter = Fighter(left['href'], name=left.text)
         right_fighter = Fighter(right['href'], name=right.text)
@@ -392,8 +486,8 @@ class Event(LazySherdogObject):
                      time=self._parse_fight_time(td[6].text))
 
     def _parse_sub_fights(self, dom):
-        table = dom.find('div', {'class': _EVENT_MATCH_RE}).table
-        rows = table.findAll('tr', {'itemprop': _SUB_EVENT_RE})
+        table = dom.find('div', {'class': 'module event_match'}).table
+        rows = table.find_all('tr', {'itemprop': _SUB_EVENT_RE})
         return [self._parse_sub_fight(row) for row in rows]
 
     def _load_properties(self):
@@ -431,94 +525,5 @@ class Event(LazySherdogObject):
         query = urllib.quote(query.lower())
         dom = Sherdog.fetch_and_parse_url(cls.search_url_path_template % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
-        urls = [a['href'] for a in table.findAll('a')]
+        urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_EVENTS_URL_RE.match, urls))
-
-
-class Sherdog(object):
-    """
-    A simple web-scraping API for Sherdog.com.
-    """
-
-    @classmethod
-    def fetch_url(cls, path):
-        """
-        Fetches a URL from sherdog.com by its path
-        """
-        assert path.startswith('/')
-        url = SHERDOG_URL + path
-        handle = urllib.urlopen(url)
-        data = handle.read()
-        handle.close()
-        return data
-
-    @classmethod
-    def fetch_and_parse_url(cls, path):
-        """
-        Fetches a URL from sherdog.com and returns a BeautifulSoup object
-        representing the parsed dom.
-        """
-        assert path.startswith('/')
-        result = cls.fetch_url(path)
-        soup = BeautifulSoup(result)
-        return soup
-
-    @classmethod
-    def get_fighter(cls, id_or_url):
-        """
-        Returns a `Fighter` object using either the numerical ID
-        or the URL path on sherdog.com
-
-        See `Fighter`.
-        """
-        return Fighter(id_or_url)
-
-    @classmethod
-    def get_event(cls, id_or_url):
-        """
-        Returns an `Event` object using either the numerical ID
-        or the URL path on sherdog.com
-
-        See `Event`.
-        """
-        return Event(id_or_url)
-
-    @classmethod
-    def get_organization(cls, id_or_url):
-        """
-        Returns an `Organization` object using either its numerical ID
-        or the URL path on sherdog.com
-
-        See `Organization`.
-        """
-        return Organization(id_or_url)
-
-    @classmethod
-    def search_events(cls, name):
-        """
-        Searches for events by name.
-
-        Returns:
-            A list of `Event` objects.
-        """
-        return Event.search(name)
-
-    @classmethod
-    def search_organizations(cls, name):
-        """
-        Searches for organizations by name.
-
-        Returns:
-            A list of `Organization` objects.
-        """
-        return Organization.search(name)
-
-    @classmethod
-    def search_fighters(cls, name):
-        """
-        Searches for fighters by name.
-
-        Returns:
-            A list of `Fighter` objects.
-        """
-        return Fighter.search(name)
