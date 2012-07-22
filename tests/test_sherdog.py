@@ -27,13 +27,11 @@ class TestSherdog(TestCase):
             self.assertEquals(weight[1], u'lbs')
             self.assertEquals(f.city, u'Las Vegas, Nevada')
             self.assertEquals(f.country, u'United States')
-            self.assertEquals(f.country_flag_url,
-                    u'http://www3.cdn.sherdog.com/1026/img/w/flags/us.png')
+            self.assertTrue(f.country_flag_url.endswith('us.png'))
             self.assertGreater(f.wins, 15)
             self.assertGreater(f.losses, 5)
-            self.assertEquals(f.image_url,
-                    u'http://www1.cdn.sherdog.com/image_crop/200/300/_images/fighter/20110412122006_20091214122837_IMG_5197.JPG')
-
+            self.assertTrue(f.image_url.endswith(
+		'fighter/20110412122006_20091214122837_IMG_5197.JPG'))
             self.assertIn(UFC146, f.events)
             self.assertGreater(len(f.events), 21)
 
