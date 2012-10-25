@@ -16,4 +16,4 @@ run tests
 =======
 
     pip install nose
-    nosetests
+    nosetests tests/test_sherdog.py
