@@ -27,8 +27,7 @@ class TestSherdog(TestCase):
             self.assertEquals(weight[1], u'lbs')
             self.assertEquals(f.city, u'Las Vegas, Nevada')
             self.assertEquals(f.country, u'United States')
-            self.assertEquals(f.country_flag_url,
-                    u'http://www3.cdn.sherdog.com/1026/img/w/flags/us.png')
+            self.assertTrue(f.country_flag_url.endswith(u'/img/w/flags/us.png'))
             self.assertGreater(f.wins, 15)
             self.assertGreater(f.losses, 5)
             self.assertEquals(f.image_url,
@@ -43,7 +42,7 @@ class TestSherdog(TestCase):
         self.assertEquals(event.organization, UFC)
         self.assertEquals(event.date, date(2012, 5, 26))
         self.assertEquals(event.venue, u'MGM Grand Garden Arena')
-        self.assertEquals(event.location, u'Las Vegas, United States')
+        self.assertEquals(event.location, u'Las Vegas, Nevada, United States')
         self.assertEquals(len(event.fights), 12)
 
         frank = Fighter(FRANK_MIR_ID)
