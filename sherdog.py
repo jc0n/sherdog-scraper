@@ -33,11 +33,19 @@ _FIGHTER_URL_RE = re.compile('^/fighter/')
 
 _SECONDS_IN_YEAR = 60 * 60 * 24 * 365
 
+class ObjectDoesNotExist(Exception):
+    """
+    Base exception raised when objects cannot be found.
+    """
+    pass
+
 
 def _fetch_url(path):
     assert path.startswith('/')
     url = SHERDOG_URL + path
     handle = urllib.urlopen(url)
+    if handle.code == 404:
+        raise ObjectDoesNotExist(url)
     data = handle.read()
     handle.close()
     return data
@@ -50,12 +58,23 @@ def _fetch_and_parse_url(path):
     return soup
 
 
+class SherdogObjectMetaclass(abc.ABCMeta):
+    def __new__(cls, name, bases, attrs):
+        class DoesNotExist(ObjectDoesNotExist):
+            """
+            Raised when an object which is a subclass of this metaclass does not exist.
+            """
+            pass
+
+        attrs['DoesNotExist'] = DoesNotExist
+        return super(SherdogObjectMetaclass, cls).__new__(cls, name, bases, attrs)
+
 class LazySherdogObject(object):
     """
     An abstract base class for Sherdog objects which helps facilitate the lazy
     loading of object properties.
     """
-    __metaclass__ = abc.ABCMeta
+    __metaclass__ = SherdogObjectMetaclass
     _lazy = True
     _url_path = abc.abstractproperty()
 
@@ -100,7 +119,11 @@ class LazySherdogObject(object):
         return str(self.name)
 
     def load_properties(self):
-        dom = _fetch_and_parse_url(self.url)
+        try:
+            dom = _fetch_and_parse_url(self.url)
+        except ObjectDoesNotExist:
+            raise self.DoesNotExist(self.full_url)
+
         self._load_properties(dom)
 
     @abc.abstractmethod
@@ -109,6 +132,8 @@ class LazySherdogObject(object):
 
     @classmethod
     def search(cls, query):
+        if not query:
+            raise ValueError("query must not be empty.")
         query = urllib.quote(query.lower())
         return cls._search(query)
 
@@ -164,6 +189,9 @@ class Fighter(LazySherdogObject):
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
+        if not table:
+            return ()
+
         urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_FIGHTER_URL_RE.match, urls))
 
@@ -354,6 +382,8 @@ class Event(LazySherdogObject):
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
+        if not table:
+            return ()
         urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_EVENTS_URL_RE.match, urls))
 

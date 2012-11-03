@@ -97,5 +97,41 @@ class TestSherdog(TestCase):
         self.assertEqual(results[0], Fighter(JUNIOR_DOS_SANTOS_ID))
 
 
+class TestSherdogErrors(TestCase):
+
+    def test_exception_sanity(self):
+        self.assertNotEquals(Fighter.DoesNotExist, Event.DoesNotExist)
+        self.assertNotEquals(Event.DoesNotExist, Organization.DoesNotExist)
+
+    def test_fighter_not_exists(self):
+        f = Fighter(0)
+        self.assertRaises(Fighter.DoesNotExist, lambda: f.name)
+
+        f = Fighter('/asdf-0')
+        self.assertRaises(Fighter.DoesNotExist, lambda: f.name)
+
+    def test_event_not_exists(self):
+        e = Event(0)
+        self.assertRaises(Event.DoesNotExist, lambda: e.name)
+
+    def test_organization_not_exists(self):
+        o = Organization(0)
+        self.assertRaises(Organization.DoesNotExist, lambda: o.name)
+
+    def test_empty_query(self):
+        self.assertRaises(ValueError, Sherdog.search_fighters, '')
+        self.assertRaises(ValueError, Sherdog.search_events, '')
+        self.assertRaises(ValueError, Sherdog.search_organizations, '')
+
+        self.assertRaises(ValueError, Fighter.search, '')
+        self.assertRaises(ValueError, Event.search, '')
+        self.assertRaises(ValueError, Organization.search, '')
+
+    def test_empty_fighter_results(self):
+        results = Sherdog.search_fighters('zzz')
+        self.assertEquals(len(results), 0)
+        self.assertSequenceEqual(results, [])
+
+
 if __name__ == '__main__':
     unittest.main()
