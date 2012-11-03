@@ -1,6 +1,6 @@
 """
-API for scraping information about MMA fighters
-and events from Sherdog.com
+Module for scraping sherdog.com for information about
+mixed martial arts (MMA) fighters, fights, organizations, and events.
 """
 
 import abc
@@ -18,26 +18,54 @@ import iso8601
 from BeautifulSoup import BeautifulSoup
 
 __author__ = 'John O\'Connor'
-__all__ = ('Sherdog', 'Event', 'Fight', 'Fighter', 'Organization')
+__version__ = '0.0.2'
+
+__all__ = ('Sherdog', 'Event', 'Fight', 'Fighter', 'Organization', 'SHERDOG_URL')
 
 SHERDOG_URL = 'http://www.sherdog.com'
 
-_EVENT_MATCH_RE = re.compile('module event_match')
+
 _EVEN_ODD_RE = re.compile('^(even)|(odd)$')
-_FIGHTER_LEFT_RE = re.compile('fighter left_side')
-_FIGHTER_RIGHT_RE = re.compile('fighter right_side')
 _FINAL_RESULT_RE = re.compile('^final_result')
-_SUB_EVENT_RE = re.compile('subEvent')
 
 _EVENTS_URL_RE = re.compile('^/events/')
 _FIGHTER_URL_RE = re.compile('^/fighter/')
 
 _SECONDS_IN_YEAR = 60 * 60 * 24 * 365
 
+
+def _fetch_url(path):
+    assert path.startswith('/')
+    url = SHERDOG_URL + path
+    handle = urllib.urlopen(url)
+    data = handle.read()
+    handle.close()
+    return data
+
+
+def _fetch_and_parse_url(path):
+    assert path.startswith('/')
+    result = _fetch_url(path)
+    soup = BeautifulSoup(result)
+    return soup
+
+
 class LazySherdogObject(object):
+    """
+    An abstract base class for Sherdog objects which helps facilitate the lazy
+    loading of object properties.
+    """
     __metaclass__ = abc.ABCMeta
     _lazy = True
     _url_path = abc.abstractproperty()
+
+    @property
+    def full_url(self):
+        """
+        The absolute url on sherdog.com which corresponds with the object.
+        Example: http://www.sherdog.com/events/BKF-2-Brazilian-King-Fighter-2-25419
+        """
+        return SHERDOG_URL + self.url
 
     def __init__(self, id_or_url, **kwargs):
         for key, value in kwargs.iteritems():
@@ -55,7 +83,7 @@ class LazySherdogObject(object):
             raise AttributeError(key)
 
         self._lazy = False
-        self._load_properties()
+        self.load_properties()
         return getattr(self, key)
 
     def __getitem__(self, key):
@@ -68,8 +96,24 @@ class LazySherdogObject(object):
     def __hash__(self):
         return hash(self.id)
 
+    def __str__(self):
+        return str(self.name)
+
+    def load_properties(self):
+        dom = _fetch_and_parse_url(self.url)
+        self._load_properties(dom)
+
     @abc.abstractmethod
-    def _load_properties(self):
+    def _load_properties(self, dom):
+        pass
+
+    @classmethod
+    def search(cls, query):
+        query = urllib.quote(query.lower())
+        return cls._search(query)
+
+    @abc.abstractmethod
+    def _search(self, query):
         pass
 
 
@@ -77,9 +121,7 @@ class Organization(LazySherdogObject):
     _url_path = '/organizations/X-%d'
     _search_url_path = '/search/organizations/?q=%s'
 
-    def _load_properties(self):
-        dom = Sherdog.fetch_and_parse_url(self.url)
-
+    def _load_properties(self, dom):
         name = dom.find('h2', {'itemprop': 'name'})
         self.name = name.text if name else None
 
@@ -98,43 +140,34 @@ class Organization(LazySherdogObject):
             self.events.append(event)
 
     @classmethod
-    def search(cls, query):
-        query = urllib.quote(query.lower())
-        result = Sherdog.fetch_url(cls._search_url_path % query)
+    def _search(cls, query):
+        result = _fetch_url(cls._search_url_path % query)
         data = json.loads(result)
-        return [Organization(id_or_url=orgdict['id'], **orgdict) for orgdict in data['collection']]
-
-    def __repr__(self):
-        return repr(self.name)
+        return [Organization(orgdict['id'], **orgdict) for orgdict in data['collection']]
 
 
 class Fighter(LazySherdogObject):
     _url_path = '/fighter/X-%d'
     _search_url_path = '/stats/fightfinder?SearchTxt=%s'
 
-    def __repr__(self):
-        return repr(self.name)
-
     @property
     def age(self):
+        "An integer for the fighters age (in years)."
         seconds = (datetime.now() - self.birthday).total_seconds()
         return int(math.floor(seconds / _SECONDS_IN_YEAR))
 
     @property
-    def full_url(self):
-        return SHERDOG_URL + self.url
+    def total_fights(self):
+        return len(self.events)
 
     @classmethod
-    def search(cls, query):
-        query = urllib.quote(query.lower())
-        dom = Sherdog.fetch_and_parse_url(cls._search_url_path % query)
+    def _search(cls, query):
+        dom = _fetch_and_parse_url(cls._search_url_path % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
         urls = [a['href'] for a in table.findAll('a')]
         return map(cls, filter(_FIGHTER_URL_RE.match, urls))
 
-    def _load_properties(self):
-        dom = Sherdog.fetch_and_parse_url(self.url)
-
+    def _load_properties(self, dom):
         image = dom.find('img', {'class': 'profile_image photo', 'itemprop': 'image'})
         self.image_url = image['src'] if image else None
 
@@ -189,135 +222,145 @@ class Fighter(LazySherdogObject):
             self.events = [Event(a['href']) for a in event_links]
 
 
-class Fight(namedtuple('Fight', ('event', 'fighters', 'match',
-                                 'method', 'referee', 'round',
-                                 'time', 'winner'))):
+class Fight(namedtuple('Fight', ('event',
+                                 'fighters',
+                                 'match',
+                                 'referee',
+                                 'victory_method',
+                                 'victory_round',
+                                 'victory_time',
+                                 'winner'))):
 
-    def __repr__(self):
+    def __hash__(self):
+        return hash(self.fighters + (self.event, self.match))
+
+    def __eq__(self, other):
+        return (self.fighters == other.fighters and
+                self.event == other.event and
+                self.match == other.match)
+
+    def __str__(self):
         return u' vs. '.join([f.name.split(None, 1)[-1].title()
                                 for f in self.fighters])
 
 
 class Event(LazySherdogObject):
-
     _url_path = '/events/X-%d'
     _search_url_path = '/stats/fightfinder?SearchTxt=%s'
 
-    @property
-    def full_url(self):
-        return SHERDOG_URL + self.url
+    def _load_properties(self, dom):
+        def parse_time(timestr):
+            if timestr and ':' in timestr:
+                minutes, seconds = timestr.split(':', 1)
+                return timedelta(minutes=int(minutes), seconds=int(seconds))
 
-    def __repr__(self):
-        return repr(self.name)
+        def parse_winner(result, left, right):
+            if result.text == u'draw':
+                return None
+            elif result.text == u'win':
+                return left
+            else:
+                return right
 
-    def _parse_fight_time(self, timestr):
-        if not timestr or ':' not in timestr:
-            return None
-        minutes, seconds = timestr.split(':', 1)
-        return timedelta(minutes=int(minutes), seconds=int(seconds))
+        def parse_main_fight(dom):
+            left = dom.find('div', {'class': 'fighter left_side'}).h3.a
+            left_fighter = Fighter(left['href'], name=left.text)
 
-    def _fight_winner(self, result, left, right):
-        if result.text == u'draw':
-            return None
-        elif result.text == u'win':
-            return left
-        else:
-            return right
+            right = dom.find('div', {'class': 'fighter right_side'}).h3.a
+            right_fighter = Fighter(right['href'], name=right.text)
 
-    def _parse_main_fight(self, dom):
-        left = dom.find('div', {'class': _FIGHTER_LEFT_RE}).h3.a
-        left_fighter = Fighter(left['href'], name=left.text)
+            fighters = (left_fighter, right_fighter)
+            result = dom.find('span', {'class': _FINAL_RESULT_RE})
+            if result is None:
+                return Fight(
+                        event=self,
+                        fighters=fighters,
+                        match=None,
+                        referee=None,
+                        victory_method=None,
+                        victory_round=None,
+                        victory_time=None,
+                        winner=None)
 
-        right = dom.find('div', {'class': _FIGHTER_RIGHT_RE}).h3.a
-        right_fighter = Fighter(right['href'], name=right.text)
+            # parse match, method, ref, round, time
+            td = dom.find('table', {'class':'resume'}).findAll('td')
+            keys = [x.contents[0].text.lower() for x in td]
+            values = [x.contents[-1].lstrip() for x in td]
+            info = dict(zip(keys, values))
+            return Fight(
+                    event=self,
+                    fighters=fighters,
+                    match=int(info['match']),
+                    referee=info['referee'],
+                    victory_method=info['method'],
+                    victory_round=int(info['round']),
+                    victory_time=parse_time(info['time']),
+                    winner=parse_winner(result, left_fighter, right_fighter))
 
-        fighters = (left_fighter, right_fighter)
-        result = dom.find('span', {'class': _FINAL_RESULT_RE})
-        if result is None:
-            return Fight(event=self, fighters=fighters,
-                    winner=None, match=None, method=None, referee=None,
-                    round=None, time=None)
+        def parse_fight(row):
+            td = row.findAll('td')
+            left, right = td[1].a, td[3].a
+            left_fighter = Fighter(left['href'], name=left.text)
+            right_fighter = Fighter(right['href'], name=right.text)
+            fighters = (left_fighter, right_fighter)
+            result = td[1].find('span', {'class': _FINAL_RESULT_RE})
+            if result is None:
+                return Fight(
+                        event=self,
+                        fighters=fighters,
+                        match=None,
+                        referee=None,
+                        victory_method=None,
+                        victory_round=None,
+                        victory_time=None,
+                        winner=None)
+            else:
+                return Fight(
+                        event=self,
+                        fighters=fighters,
+                        match=int(td[0].text),
+                        referee=td[4].contents[-1].text,
+                        victory_method=td[4].contents[0],
+                        victory_round=int(td[5].text),
+                        victory_time=parse_time(td[6].text),
+                        winner=parse_winner(result, left_fighter, right_fighter))
 
-        # parse match, method, ref, round, time
-        td = dom.find('table', {'class':'resume'}).findAll('td')
-        keys = [x.contents[0].text.lower() for x in td]
-        values = [x.contents[-1].lstrip() for x in td]
-        info = dict(zip(keys, values))
-        time = self._parse_fight_time(info['time'])
-        return Fight(event=self, fighters=fighters,
-                winner=self._fight_winner(result, left_fighter, right_fighter),
-                match=int(info['match']), method=info['method'], referee=info['referee'],
-                round=int(info['round']), time=time)
+        def parse_fights(dom):
+            table = dom.find('div', {'class': 'module event_match'}).table
+            rows = table.findAll('tr', {'itemprop': 'subEvent'})
+            return [parse_fight(row) for row in rows]
 
-    def _parse_sub_fight(self, row):
-        td = row.findAll('td')
-        left, right = td[1].a, td[3].a
-        left_fighter = Fighter(left['href'], name=left.text)
-        right_fighter = Fighter(right['href'], name=right.text)
-        fighters = (left_fighter, right_fighter)
-        result = td[1].find('span', {'class': _FINAL_RESULT_RE})
-        if result is None:
-            return Fight(event=self, fighters=fighters, winner=None,
-                    match=None, method=None, referee=None,
-                    round=None, time=None)
-
-        return Fight(event=self,
-                     fighters=fighters,
-                     winner=self._fight_winner(result, left_fighter, right_fighter),
-                     match=int(td[0].text),
-                     method=td[4].contents[0],
-                     referee=td[4].contents[-1].text,
-                     round=int(td[5].text),
-                     time=self._parse_fight_time(td[6].text))
-
-    def _parse_sub_fights(self, dom):
-        table = dom.find('div', {'class': _EVENT_MATCH_RE}).table
-        rows = table.findAll('tr', {'itemprop': _SUB_EVENT_RE})
-        return [self._parse_sub_fight(row) for row in rows]
-
-    def _load_properties(self):
-        dom = Sherdog.fetch_and_parse_url(self.url)
         detail = dom.find('div', {'class': 'event_detail'})
         self.name = detail.span.text
+
         datestr = detail.find('meta', {'itemprop': 'startDate'})['content']
         self.date = iso8601.parse_date(datestr).date()
+
         location = detail.find('span', {'itemprop': 'location'}).text
         venue, location = location.split(',', 1)
         self.location = location.lstrip()
         self.location_thumb_url = detail.find('span', {'class': 'author'}).img['src']
         self.venue = venue.lstrip()
+
         org = dom.find('div', {'itemprop': 'attendee'})
         self.organization = Organization(org.a['href'], name=org.span.text)
-        self.fights = [self._parse_main_fight(dom)]
-        self.fights.extend(self._parse_sub_fights(dom))
-        self.fights.reverse()
+
+        fights = [parse_main_fight(dom)]
+        fights.extend(parse_fights(dom))
+        fights.reverse()
+        self.fights = fights
 
     @classmethod
-    def search(cls, query):
-        query = urllib.quote(query.lower())
-        dom = Sherdog.fetch_and_parse_url(cls._search_url_path % query)
+    def _search(cls, query):
+        dom = _fetch_and_parse_url(cls._search_url_path % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
         urls = [a['href'] for a in table.findAll('a')]
         return map(cls, filter(_EVENTS_URL_RE.match, urls))
 
 
-class Sherdog(object):
-
-    @classmethod
-    def fetch_url(cls, path):
-        assert path.startswith('/')
-        url = SHERDOG_URL + path
-        handle = urllib.urlopen(url)
-        data = handle.read()
-        handle.close()
-        return data
-
-    @classmethod
-    def fetch_and_parse_url(cls, path):
-        assert path.startswith('/')
-        result = cls.fetch_url(path)
-        soup = BeautifulSoup(result)
-        return soup
+class Sherdog:
+    def __init__(self):
+        raise TypeError("Sherdog class is not intended to be instantiated.")
 
     @classmethod
     def get_fighter(cls, id_or_url):

@@ -51,10 +51,10 @@ class TestSherdog(TestCase):
         self.assertEquals(main_fight.fighters, (junior, frank))
         self.assertEquals(main_fight.winner, junior)
         self.assertEquals(main_fight.match, 12)
-        self.assertEquals(main_fight.method, u'TKO (Punches)')
+        self.assertEquals(main_fight.victory_method, u'TKO (Punches)')
         self.assertEquals(main_fight.referee, u'Herb Dean')
-        self.assertEquals(main_fight.round, 2)
-        self.assertEquals(main_fight.time, timedelta(minutes=3, seconds=4))
+        self.assertEquals(main_fight.victory_round, 2)
+        self.assertEquals(main_fight.victory_time, timedelta(minutes=3, seconds=4))
 
         cain = Fighter('Cain-Velasquez-19102')
         bigfoot = Fighter('Antonio-Silva-12354')
@@ -62,9 +62,9 @@ class TestSherdog(TestCase):
         self.assertEquals(other_fight.fighters, (cain, bigfoot))
         self.assertEquals(other_fight.winner, cain)
         self.assertEquals(other_fight.match, 11)
-        self.assertEquals(other_fight.method, u'TKO (Punches)')
-        self.assertEquals(other_fight.round, 1)
-        self.assertEquals(other_fight.time, timedelta(minutes=3, seconds=36))
+        self.assertEquals(other_fight.victory_method, u'TKO (Punches)')
+        self.assertEquals(other_fight.victory_round, 1)
+        self.assertEquals(other_fight.victory_time, timedelta(minutes=3, seconds=36))
         self.assertEquals(other_fight.referee, u'Josh Rosenthal')
 
     def test_get_organization(self):
