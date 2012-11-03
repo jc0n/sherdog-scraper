@@ -110,7 +110,7 @@ class LazySherdogObject(object):
 
     def __eq__(self, other):
         assert isinstance(other, LazySherdogObject)
-        return self.id == other.id
+        return self.url == other.url
 
     def __hash__(self):
         return hash(self.id)
