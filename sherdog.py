@@ -15,7 +15,7 @@ from weakref import WeakValueDictionary
 
 # dependencies
 import iso8601
-from BeautifulSoup import BeautifulSoup
+from bs4 import BeautifulSoup
 
 __author__ = 'John O\'Connor'
 __version__ = '0.0.2'
@@ -130,7 +130,7 @@ class Organization(LazySherdogObject):
 
         self.events = []
         table = dom.find('table', {'class': 'event'})
-        rows = table.findAll('tr', {'class': _EVEN_ODD_RE})
+        rows = table.find_all('tr', {'class': _EVEN_ODD_RE})
         for row in rows:
             datestr = row.find('meta', {'itemprop': 'startDate'})['content']
             date = iso8601.parse_date(datestr)
@@ -164,7 +164,7 @@ class Fighter(LazySherdogObject):
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
-        urls = [a['href'] for a in table.findAll('a')]
+        urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_FIGHTER_URL_RE.match, urls))
 
     def _load_properties(self, dom):
@@ -218,7 +218,7 @@ class Fighter(LazySherdogObject):
 
         content = dom.find('div', {'class': 'content table'})
         if content and hasattr(content, 'table'):
-            event_links = content.table.findAll('a', {'href': _EVENTS_URL_RE})
+            event_links = content.table.find_all('a', {'href': _EVENTS_URL_RE})
             self.events = [Event(a['href']) for a in event_links]
 
 
@@ -283,7 +283,7 @@ class Event(LazySherdogObject):
                         winner=None)
 
             # parse match, method, ref, round, time
-            td = dom.find('table', {'class':'resume'}).findAll('td')
+            td = dom.find('table', {'class':'resume'}).find_all('td')
             keys = [x.contents[0].text.lower() for x in td]
             values = [x.contents[-1].lstrip() for x in td]
             info = dict(zip(keys, values))
@@ -298,7 +298,7 @@ class Event(LazySherdogObject):
                     winner=parse_winner(result, left_fighter, right_fighter))
 
         def parse_fight(row):
-            td = row.findAll('td')
+            td = row.find_all('td')
             left, right = td[1].a, td[3].a
             left_fighter = Fighter(left['href'], name=left.text)
             right_fighter = Fighter(right['href'], name=right.text)
@@ -327,7 +327,7 @@ class Event(LazySherdogObject):
 
         def parse_fights(dom):
             table = dom.find('div', {'class': 'module event_match'}).table
-            rows = table.findAll('tr', {'itemprop': 'subEvent'})
+            rows = table.find_all('tr', {'itemprop': 'subEvent'})
             return [parse_fight(row) for row in rows]
 
         detail = dom.find('div', {'class': 'event_detail'})
@@ -354,7 +354,7 @@ class Event(LazySherdogObject):
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
         table = dom.find('table', {'class': 'fightfinder_result'})
-        urls = [a['href'] for a in table.findAll('a')]
+        urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_EVENTS_URL_RE.match, urls))
 
 
