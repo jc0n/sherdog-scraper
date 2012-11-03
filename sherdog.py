@@ -252,7 +252,6 @@ class Fighter(LazySherdogObject):
 
 class Fight(namedtuple('Fight', ('event',
                                  'fighters',
-                                 'match',
                                  'referee',
                                  'victory_method',
                                  'victory_round',
@@ -260,12 +259,11 @@ class Fight(namedtuple('Fight', ('event',
                                  'winner'))):
 
     def __hash__(self):
-        return hash(self.fighters + (self.event, self.match))
+        return hash(self.fighters + (self.event, ))
 
     def __eq__(self, other):
         return (self.fighters == other.fighters and
-                self.event == other.event and
-                self.match == other.match)
+                self.event == other.event)
 
     def __str__(self):
         return u' vs. '.join([f.name.split(None, 1)[-1].title()
@@ -303,7 +301,6 @@ class Event(LazySherdogObject):
                 return Fight(
                         event=self,
                         fighters=fighters,
-                        match=None,
                         referee=None,
                         victory_method=None,
                         victory_round=None,
@@ -318,7 +315,6 @@ class Event(LazySherdogObject):
             return Fight(
                     event=self,
                     fighters=fighters,
-                    match=int(info['match']),
                     referee=info['referee'],
                     victory_method=info['method'],
                     victory_round=int(info['round']),
@@ -336,7 +332,6 @@ class Event(LazySherdogObject):
                 return Fight(
                         event=self,
                         fighters=fighters,
-                        match=None,
                         referee=None,
                         victory_method=None,
                         victory_round=None,
@@ -346,7 +341,6 @@ class Event(LazySherdogObject):
                 return Fight(
                         event=self,
                         fighters=fighters,
-                        match=int(td[0].text),
                         referee=td[4].contents[-1].text,
                         victory_method=td[4].contents[0],
                         victory_round=int(td[5].text),

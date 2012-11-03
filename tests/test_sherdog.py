@@ -50,7 +50,6 @@ class TestSherdog(TestCase):
         main_fight = event.fights[-1]
         self.assertEquals(main_fight.fighters, (junior, frank))
         self.assertEquals(main_fight.winner, junior)
-        self.assertEquals(main_fight.match, 12)
         self.assertEquals(main_fight.victory_method, u'TKO (Punches)')
         self.assertEquals(main_fight.referee, u'Herb Dean')
         self.assertEquals(main_fight.victory_round, 2)
@@ -61,7 +60,6 @@ class TestSherdog(TestCase):
         other_fight = event.fights[-2]
         self.assertEquals(other_fight.fighters, (cain, bigfoot))
         self.assertEquals(other_fight.winner, cain)
-        self.assertEquals(other_fight.match, 11)
         self.assertEquals(other_fight.victory_method, u'TKO (Punches)')
         self.assertEquals(other_fight.victory_round, 1)
         self.assertEquals(other_fight.victory_time, timedelta(minutes=3, seconds=36))
