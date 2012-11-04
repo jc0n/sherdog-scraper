@@ -8,6 +8,45 @@
 
 ----------
 
+Recipes
+=======
+
+
+.. code-block:: python
+
+    ##
+    # Find fighter rivalries
+    from sherdog import Sherdog
+    from collections import Counter
+    from itertools import chain
+
+    matt = Sherdog.search_fighters("matt hughes")[0]
+    c = Counter(chain.from_iterable(f.fighters for f in matt.fights))
+    del c[matt]
+    print c.most_common()
+
+    ##
+    # Find favorite specific victory methods
+    c = Counter(f.victory_method for f in matt.fights if f.winner == matt)
+    print c.most_common()
+
+    ##
+    # Find favorite general victory methods
+    c = Counter(f.victory_method.partition(' ')[0] for f in matt.fights if f.winner == matt)
+    print c.most_common()
+
+
+    ##
+    # Number of fights finished in the first round
+    first_round_wins = sum(1 for f in matt.fights if f.round == 1)
+
+    ##
+    # Time spent in octagon (assuming 5 minute rounds)
+    from datetime import timedelta
+    octagon_time = lambda f: timedelta(minutes=5 * (f.round - 1)) + (f.time or timedelta(0))
+    total_fight_time = sum((octagon_time(fight) for fight in matt.fights), timedelta(0))
+
+
 High Level API
 ==============
 
@@ -37,7 +76,7 @@ High Level API
        worst = min(fighters, key=key)
        print "%s has more wins than %s!" % (best, worst)
 
-       rounds_fought = sum(f.victory_round for f in matt.fights)
+       rounds_fought = sum(f.round for f in matt.fights)
        print "Matt has fought a total of %d rounds" % rounds_fought
 
 
@@ -155,11 +194,11 @@ Sherdog Entities
 
        The name of the referee overseeing the fight. Ex: "Herb Dean"
 
-    .. attribute:: victory_round
+    .. attribute:: round
 
-       The number of the round where the fight ended.
+       The round number when the fight ended.
 
-    .. attribute:: victory_time
+    .. attribute:: time
 
        A python :class:`timedelta` object representing the minutes and seconds into the round when the fight ended.
 
@@ -180,10 +219,30 @@ Sherdog Entities
         :type query: string
         :rtype: list of :class:`Fighter` objects.
 
+
+        *Example:*
+
         .. code-block:: python
 
            results = Fighter.search('tito ortiz')
            tito = results[0]
+
+    .. method:: fights_in_common(other_fighter)
+
+        Get a list of fights that two fighters have in common.
+
+        :param other_fighter: fighter to compare
+        :type other_fighter: a :class:`Fighter` object
+        :rtype: a :class:`list` of :class:`Fight` objects.
+
+
+        *Example:*
+
+        .. code-block:: python
+
+          matt_hughes = Sherdog.search_fighters("matt hughes")[0]
+          bj_penn = Sherdog.search_fighters("bj penn")[0]
+          rivalry = matt_hughes.fights_in_common(bj_penn)
 
     .. attribute:: name
 
