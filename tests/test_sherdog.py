@@ -94,6 +94,17 @@ class TestSherdog(TestCase):
         self.assertGreaterEqual(len(results), 1)
         self.assertEqual(results[0], Fighter(JUNIOR_DOS_SANTOS_ID))
 
+    def test_object_cache(self):
+        tito1 = Sherdog.search_fighters('tito ortiz')[0]
+        tito2 = Sherdog.search_fighters('tito ortiz')[0]
+        self.assertIs(tito1, tito2)
+        self.assertEquals(tito1.name, u'Tito Ortiz')
+        self.assertIs(tito1.name, tito2.name)
+
+        ufc146 = Sherdog.search_events('ufc 146')[0]
+        self.assertIs(ufc146, UFC146)
+        self.assertIsNot(ufc146, tito1)
+
 
 class TestSherdogErrors(TestCase):
 

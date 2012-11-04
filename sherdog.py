@@ -69,6 +69,7 @@ class SherdogObjectMetaclass(abc.ABCMeta):
         attrs['DoesNotExist'] = DoesNotExist
         return super(SherdogObjectMetaclass, cls).__new__(cls, name, bases, attrs)
 
+
 class LazySherdogObject(object):
     """
     An abstract base class for Sherdog objects which helps facilitate the lazy
@@ -77,6 +78,10 @@ class LazySherdogObject(object):
     __metaclass__ = SherdogObjectMetaclass
     _lazy = True
     _url_path = abc.abstractproperty()
+    _object_cache = WeakValueDictionary()
+
+    # whether or not the object identified by id or url exists on sherdog
+    exists = None
 
     @property
     def full_url(self):
@@ -86,18 +91,28 @@ class LazySherdogObject(object):
         """
         return SHERDOG_URL + self.url
 
-    def __init__(self, id_or_url, **kwargs):
-        for key, value in kwargs.iteritems():
-            setattr(self, key, value)
-
+    def __new__(cls, id_or_url, *args, **kwargs):
         if isinstance(id_or_url, basestring):
-            self.id = int(id_or_url[id_or_url.rfind('-') + 1:])
+            id = int(id_or_url[id_or_url.rfind('-') + 1:])
         else:
-            self.id = int(id_or_url)
+            id = int(id_or_url)
 
-        self.url = self._url_path % self.id
+        key = (type(cls), id)
+        obj = cls._object_cache.get(key, None)
+        if obj is None:
+            obj = super(LazySherdogObject, cls).__new__(cls)
+            obj.id = id
+            obj.url = cls._url_path % id
+            cls._object_cache[key] = obj
+
+        for key, value in kwargs.iteritems():
+            setattr(obj, key, value)
+
+        return obj
 
     def __getattr__(self, key):
+        if self.exists is False:
+            raise self.DoesNotExist(self.full_url)
         if not self._lazy:
             raise AttributeError(key)
 
@@ -106,7 +121,10 @@ class LazySherdogObject(object):
         return getattr(self, key)
 
     def __getitem__(self, key):
-        return getattr(self, key)
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key)
 
     def __eq__(self, other):
         assert isinstance(other, LazySherdogObject)
@@ -122,8 +140,10 @@ class LazySherdogObject(object):
         try:
             dom = _fetch_and_parse_url(self.url)
         except ObjectDoesNotExist:
+            self.exists = False
             raise self.DoesNotExist(self.full_url)
 
+        self.exists = True
         self._load_properties(dom)
 
     @abc.abstractmethod
