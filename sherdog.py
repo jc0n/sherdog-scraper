@@ -116,7 +116,6 @@ class LazySherdogObject(object):
         if not self._lazy:
             raise AttributeError(key)
 
-        self._lazy = False
         self.load_properties()
         return getattr(self, key)
 
@@ -137,6 +136,10 @@ class LazySherdogObject(object):
         return str(self.name)
 
     def load_properties(self):
+        if not self._lazy:
+            return
+
+        self._lazy = False
         try:
             dom = _fetch_and_parse_url(self.url)
         except ObjectDoesNotExist:
