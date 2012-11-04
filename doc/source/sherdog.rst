@@ -294,7 +294,15 @@ Sherdog Entities
 
     .. attribute:: fights
 
-       List of :class:`Fight` objects that the fighter has fought in.
+       List of all :class:`Fight` objects that the fighter has fought in.
+
+    .. attribute:: fights_won
+
+       List of :class:`Fight` objects only for fights that the fighter has won.
+
+    .. attribute:: fights_lost
+
+       List of :class:`Fight` objects only for fights that the fighter has lost.
 
     .. exception:: DoesNotExist
 

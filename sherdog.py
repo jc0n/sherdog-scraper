@@ -230,6 +230,14 @@ class Fighter(LazySherdogObject):
         seconds = (datetime.now().date() - self.birthday).total_seconds()
         return int(math.floor(seconds / _SECONDS_IN_YEAR))
 
+    @property
+    def fights_won(self):
+        return [fight for fight in self.fights if fight.winner == self]
+
+    @property
+    def fights_lost(self):
+        return [fight for fight in self.fights if fight.winner != self]
+
     def fights_in_common(self, other_fighter):
         assert isinstance(other_fighter, Fighter)
         result = list(set(self.fights) & set(other_fighter.fights))
