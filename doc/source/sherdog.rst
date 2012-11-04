@@ -128,7 +128,14 @@ High Level API
            tito = results[0]
 
 
-Sherdog Objects
+.. exception:: ObjectDoesNotExist
+
+   Base exception raised when a sherdog object is instantiated with an id or url that does not exist. In other words this is raised
+   when sherdog.com returns an http status code 404 for the underlying http request.
+
+
+
+Sherdog Entities
 ---------------
 
 .. class:: Fight
@@ -164,7 +171,7 @@ Sherdog Objects
        A :class:`Fighter` object representing the winner of the fight.
 
 
-.. class:: Fighter
+.. class:: Fighter(id_or_url, \*\*kwargs)
 
     Represents a mixed martial arts fighter such as Tito Ortiz.
 
@@ -229,8 +236,13 @@ Sherdog Objects
 
        List of :class:`Event` objects where the fighter has fought in.
 
+    .. exception:: DoesNotExist
 
-.. class:: Event
+       Raised when a :class:`Fighter` object is instantiated with an id or url that does not exist. In other words, raised
+       when sherdog.com returns an http status code 404 for the underlying http request.
+
+
+.. class:: Event(id_or_url, \*\*kwargs)
 
     Represents an event such as "UFC 153". An event is hosted by an organization
     at a venue and consists of one or more fights.
@@ -287,8 +299,13 @@ Sherdog Objects
 
        Example: "http://www.sherdog.com/events/BKF-2-Brazilian-King-Fighter-2-25419"
 
+    .. exception:: DoesNotExist
 
-.. class:: Organization
+       Raised when a :class:`Event` object is instantiated with an id or url that does not exist. In other words, raised
+       when sherdog.com returns an http status code 404 for the underlying http request.
+
+
+.. class:: Organization(id_or_url, \*\*kwargs)
 
    Represents an organization such as the Ultimate Fighting Championship.
 
@@ -311,4 +328,9 @@ Sherdog Objects
    .. attribute:: events
 
        A list of :class:`Event` objects hosted by the organization.
+
+   .. exception:: DoesNotExist
+
+       Raised when a :class:`Organization` object is instantiated with an id or url that does not exist. In other words, raised
+       when sherdog.com returns an http status code 404 for the underlying http request.
 
