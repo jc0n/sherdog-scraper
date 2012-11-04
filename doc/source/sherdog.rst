@@ -238,7 +238,11 @@ Sherdog Entities
 
     .. attribute:: events
 
-       List of :class:`Event` objects where the fighter has fought in.
+       List of :class:`Event` objects where the fighter has had fights.
+
+    .. attribute:: fights
+
+       List of :class:`Fight` objects that the fighter has fought in.
 
     .. exception:: DoesNotExist
 

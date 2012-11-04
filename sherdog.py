@@ -7,6 +7,7 @@ import abc
 import json
 import math
 import re
+import string
 import urllib
 
 from collections import namedtuple
@@ -56,6 +57,23 @@ def _fetch_and_parse_url(path):
     result = _fetch_url(path)
     soup = BeautifulSoup(result)
     return soup
+
+
+def pick_winner(result, left_fighter, right_fighter):
+    if result.text == u'draw':
+        return None
+    return left_fighter if result.text == u'win' else right_fighter
+
+
+def parse_fight_time(timestr):
+    if timestr and ':' in timestr:
+        minutes, seconds = timestr.split(':', 1)
+        return timedelta(minutes=int(minutes), seconds=int(seconds))
+
+
+def clean_nickname(nickstr):
+    if nickstr:
+        return nickstr.strip('\'"' + string.whitespace)
 
 
 class SherdogObjectMetaclass(abc.ABCMeta):
@@ -132,6 +150,9 @@ class LazySherdogObject(object):
     def __hash__(self):
         return hash(self.id)
 
+    def __repr__(self):
+        return repr(self.name)
+
     def __str__(self):
         return str(self.name)
 
@@ -170,16 +191,12 @@ class Organization(LazySherdogObject):
     _search_url_path = '/search/organizations/?q=%s'
 
     def _load_properties(self, dom):
-        name = dom.find('h2', {'itemprop': 'name'})
-        self.name = name.text if name else None
-
-        description = dom.find('div', {'class': 'data', 'itemprop': 'description'})
-        self.description = description.text if description else None
+        self.name = dom.find('h2', {'itemprop': 'name'}).text
+        self.description = dom.find('div', {'class': 'data', 'itemprop': 'description'}).text
 
         self.events = []
-        table = dom.find('table', {'class': 'event'})
-        rows = table.find_all('tr', {'class': _EVEN_ODD_RE})
-        for row in rows:
+        table = dom.find('table', class_='event')
+        for row in table.find_all('tr', class_=_EVEN_ODD_RE):
             datestr = row.find('meta', {'itemprop': 'startDate'})['content']
             date = iso8601.parse_date(datestr)
             name = row.find('span', {'itemprop': 'name'}).text
@@ -190,6 +207,8 @@ class Organization(LazySherdogObject):
     @classmethod
     def _search(cls, query):
         result = _fetch_url(cls._search_url_path % query)
+        if not result:
+            return ()
         data = json.loads(result)
         return [Organization(orgdict['id'], **orgdict) for orgdict in data['collection']]
 
@@ -201,78 +220,113 @@ class Fighter(LazySherdogObject):
     @property
     def age(self):
         "An integer for the fighters age (in years)."
-        seconds = (datetime.now() - self.birthday).total_seconds()
+        if not self.birthday:
+            return None
+        seconds = (datetime.now().date() - self.birthday).total_seconds()
         return int(math.floor(seconds / _SECONDS_IN_YEAR))
-
-    @property
-    def total_fights(self):
-        return len(self.events)
 
     @classmethod
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
-        table = dom.find('table', {'class': 'fightfinder_result'})
-        if not table:
+        if dom is None:
+            return ()
+        table = dom.find('table', class_='fightfinder_result')
+        if table is None:
             return ()
 
-        urls = [a['href'] for a in table.find_all('a')]
-        return map(cls, filter(_FIGHTER_URL_RE.match, urls))
+        results = []
+        for row in table.find_all('tr'):
+            a = row.a
+            if a is not None and _FIGHTER_URL_RE.match(a['href']):
+                td = row.find_all('td')
+                fighter = cls(a['href'],
+                        name=a.text,
+                        nickname=clean_nickname(td[2].text),
+                        height=td[3].strong.text,
+                        weight=td[4].strong.text,
+                        association=td[5].text)
+                results.append(fighter)
+        return results
 
     def _load_properties(self, dom):
+        self.name = dom.find('span', class_='fn').text.strip()
+
+        nickname = dom.find('span', class_='nickname')
+        self.nickname = clean_nickname(nickname.text) if nickname else None
+
         image = dom.find('img', {'class': 'profile_image photo', 'itemprop': 'image'})
-        self.image_url = image['src'] if image else None
+        self.image_url = image.get('src', None) if image else None
 
-        name = dom.find('span', {'class': 'fn'})
-        self.name = name.text if name else None
 
-        nickname = dom.find('span', {'class': 'nickname'})
-        self.nickname = nickname.text.strip('\'"') if nickname and nickname.text else None
-
-        birthday = dom.find('span', {'itemprop': 'birthDate'})
         self.birthday = None
+        birthday = dom.find('span', {'itemprop': 'birthDate'})
         if birthday and birthday.text and '-' in birthday.text:
+            self.birthday = datetime.strptime(birthday.text.strip(), "%Y-%m-%d").date()
+
+        birthplace = dom.find('span', class_='item birthplace')
+        self.city = birthplace.find('span', class_='locality').text
+        self.country = birthplace.find('strong', {'itemprop': 'nationality'}).text
+        self.country_flag_url = birthplace.img['src'] if birthplace.img else None
+
+        self.height = dom.find('span', class_='item height').strong.text
+        self.weight = dom.find('span', class_='item weight').strong.text
+        self.weight_class = dom.find('h6', class_='item wclass').strong.text
+
+        win_graph = dom.find('div', class_='bio_graph')
+        counter = win_graph.find('span', class_='counter')
+        self.wins = int(counter.text)
+
+        lose_graph = dom.find('div', class_='bio_graph loser')
+        counter = lose_graph.find('span', class_='counter')
+        self.losses = int(counter.text)
+
+        self.fights = []
+
+        def fight_history(tag):
+            if tag.name != 'div':
+                return False
             try:
-                self.birthday = datetime.strptime(birthday.text, "%Y-%m-%d").date()
-            except ValueError:
-                pass
+                heading = tag.h2.text
+            except AttributeError:
+                return False
+            else:
+                return heading.strip().lower() == 'fight history'
 
-        birthplace = dom.find('span', {'class': 'item birthplace'})
-        if birthplace:
-            city = birthplace.find('span', {'class': 'locality'})
-            self.city = city.text if city else None
-            country = birthplace.find('strong', {'itemprop': 'nationality'})
-            self.country = country.text if country else None
-            self.country_flag_url = birthplace.img['src'] if birthplace.img else None
-        else:
-            self.city = self.country = self.country_flag_url = None
+        fight_history = dom.find(fight_history, class_='module fight_history')
+        if fight_history is not None:
+            table = fight_history.table.tbody
+            for row in table.find_all('tr', class_=_EVEN_ODD_RE):
+                td = row.find_all('td')
+                # right result (win, loss, draw)
+                fight_result = row.find('span', {'class': _FINAL_RESULT_RE})
 
-        height = dom.find('span', {'class': 'item height'})
-        self.height = height.strong.text if height and hasattr(height, 'strong') else None
+                # parse event info
+                event_link = row.find('a', {'href': _EVENTS_URL_RE})
+                event = Event(event_link['href'], name=event_link.text)
 
-        weight = dom.find('span', {'class': 'item weight'})
-        self.weight = weight.strong.text if weight and hasattr(weight, 'strong') else None
+                # parse event date
+                event_date = td[2].find('span', {'class': 'sub_line'})
+                if event_date:
+                    datestr = event_date.text.strip()
+                    event.date = datetime.strptime(datestr, '%b / %d / %Y')
 
-        wclass = dom.find('h6', {'class': 'item wclass'})
-        self.weight_class = wclass.strong.text if wclass and hasattr(wclass, 'strong') else None
+                # parse opponent
+                opponent_link = row.find('a', {'href': _FIGHTER_URL_RE})
+                opponent = Fighter(opponent_link['href'], name=opponent_link.text)
 
-        win_graph = dom.find('div', {'class': 'bio_graph'})
-        if win_graph:
-            counter = win_graph.find('span', {'class': 'counter'})
-            self.wins = int(counter.text) if counter and counter.text else 0
-        else:
-            self.wins = None
+                # victory method, referee and victory_round
+                victory_method, referee = list(td[3].strings)[:2]
+                victory_round = int(td[4].text) if td[4].text else None
 
-        lose_graph = dom.find('div', {'class': 'bio_graph loser'})
-        if lose_graph:
-            counter = lose_graph.find('span', {'class': 'counter'})
-            self.losses = int(counter.text) if counter and counter.text else 0
-        else:
-            self.losses = None
-
-        content = dom.find('div', {'class': 'content table'})
-        if content and hasattr(content, 'table'):
-            event_links = content.table.find_all('a', {'href': _EVENTS_URL_RE})
-            self.events = [Event(a['href']) for a in event_links]
+                fight = Fight(
+                    event=event,
+                    fighters=frozenset((self, opponent)),
+                    referee=referee,
+                    victory_method=victory_method,
+                    victory_round=victory_round,
+                    victory_time=parse_fight_time(td[5].text),
+                    winner=pick_winner(fight_result, self, opponent))
+                self.fights.append(fight)
 
 
 class Fight(namedtuple('Fight', ('event',
@@ -284,11 +338,10 @@ class Fight(namedtuple('Fight', ('event',
                                  'winner'))):
 
     def __hash__(self):
-        return hash(self.fighters + (self.event, ))
+        return hash((self.fighters, self.event))
 
     def __eq__(self, other):
-        return (self.fighters == other.fighters and
-                self.event == other.event)
+        return self.fighters == other.fighters and self.event == other.event
 
     def __str__(self):
         return u' vs. '.join([f.name.split(None, 1)[-1].title()
@@ -300,28 +353,15 @@ class Event(LazySherdogObject):
     _search_url_path = '/stats/fightfinder?SearchTxt=%s'
 
     def _load_properties(self, dom):
-        def parse_time(timestr):
-            if timestr and ':' in timestr:
-                minutes, seconds = timestr.split(':', 1)
-                return timedelta(minutes=int(minutes), seconds=int(seconds))
-
-        def parse_winner(result, left, right):
-            if result.text == u'draw':
-                return None
-            elif result.text == u'win':
-                return left
-            else:
-                return right
-
         def parse_main_fight(dom):
-            left = dom.find('div', {'class': 'fighter left_side'}).h3.a
+            left = dom.find('div', class_='fighter left_side').h3.a
             left_fighter = Fighter(left['href'], name=left.text)
 
-            right = dom.find('div', {'class': 'fighter right_side'}).h3.a
+            right = dom.find('div', class_='fighter right_side').h3.a
             right_fighter = Fighter(right['href'], name=right.text)
 
-            fighters = (left_fighter, right_fighter)
-            result = dom.find('span', {'class': _FINAL_RESULT_RE})
+            fighters = frozenset((left_fighter, right_fighter))
+            result = dom.find('span', class_=_FINAL_RESULT_RE)
             if result is None:
                 return Fight(
                         event=self,
@@ -333,26 +373,24 @@ class Event(LazySherdogObject):
                         winner=None)
 
             # parse match, method, ref, round, time
-            td = dom.find('table', {'class':'resume'}).find_all('td')
-            keys = [x.contents[0].text.lower() for x in td]
-            values = [x.contents[-1].lstrip() for x in td]
-            info = dict(zip(keys, values))
+            td = dom.find('table', class_='resume').find_all('td')
+            info = dict((x.contents[0].text.lower(), x.contents[-1].lstrip()) for x in td)
             return Fight(
                     event=self,
                     fighters=fighters,
                     referee=info['referee'],
                     victory_method=info['method'],
                     victory_round=int(info['round']),
-                    victory_time=parse_time(info['time']),
-                    winner=parse_winner(result, left_fighter, right_fighter))
+                    victory_time=parse_fight_time(info['time']),
+                    winner=pick_winner(result, left_fighter, right_fighter))
 
         def parse_fight(row):
             td = row.find_all('td')
             left, right = td[1].a, td[3].a
             left_fighter = Fighter(left['href'], name=left.text)
             right_fighter = Fighter(right['href'], name=right.text)
-            fighters = (left_fighter, right_fighter)
-            result = td[1].find('span', {'class': _FINAL_RESULT_RE})
+            fighters = frozenset((left_fighter, right_fighter))
+            result = td[1].find('span', class_=_FINAL_RESULT_RE)
             if result is None:
                 return Fight(
                         event=self,
@@ -369,24 +407,23 @@ class Event(LazySherdogObject):
                         referee=td[4].contents[-1].text,
                         victory_method=td[4].contents[0],
                         victory_round=int(td[5].text),
-                        victory_time=parse_time(td[6].text),
-                        winner=parse_winner(result, left_fighter, right_fighter))
+                        victory_time=parse_fight_time(td[6].text),
+                        winner=pick_winner(result, left_fighter, right_fighter))
 
         def parse_fights(dom):
-            table = dom.find('div', {'class': 'module event_match'}).table
+            table = dom.find('div', class_='module event_match').table
             rows = table.find_all('tr', {'itemprop': 'subEvent'})
             return [parse_fight(row) for row in rows]
 
-        detail = dom.find('div', {'class': 'event_detail'})
+        detail = dom.find('div', class_='event_detail')
         self.name = detail.span.text
 
         datestr = detail.find('meta', {'itemprop': 'startDate'})['content']
         self.date = iso8601.parse_date(datestr).date()
 
-        location = detail.find('span', {'itemprop': 'location'}).text
-        venue, location = location.split(',', 1)
+        venue, location = detail.find('span', {'itemprop': 'location'}).text.split(',', 1)
         self.location = location.lstrip()
-        self.location_thumb_url = detail.find('span', {'class': 'author'}).img['src']
+        self.location_thumb_url = detail.find('span', class_='author').img['src']
         self.venue = venue.lstrip()
 
         org = dom.find('div', {'itemprop': 'attendee'})
@@ -400,9 +437,29 @@ class Event(LazySherdogObject):
     @classmethod
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
-        table = dom.find('table', {'class': 'fightfinder_result'})
-        if not table:
+        if dom is None:
             return ()
+
+        table = dom.find('table', class_='fightfinder_result')
+        if table is None:
+            return ()
+
+        results = []
+        for row in table.find_all('tr'):
+            a = row.a
+            if a is not None and _EVENTS_URL_RE.match(a['href']):
+                td = row.find_all('td')
+                event = Event(a['href'], name=a.text)
+                results.append(event)
+
+                datestr = ' '.join(td[0].stripped_strings)
+                event.date = datetime.strptime(datestr, '%b %d %Y')
+
+                org_link = td[2].a
+                if org_link:
+                    event.organization = Organization(org_link['href'], name=org_link.text)
+
+
         urls = [a['href'] for a in table.find_all('a')]
         return map(cls, filter(_EVENTS_URL_RE.match, urls))
 
