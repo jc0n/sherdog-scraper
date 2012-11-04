@@ -226,13 +226,15 @@ class Fighter(LazySherdogObject):
         self.name = name.text if name else None
 
         nickname = dom.find('span', {'class': 'nickname'})
-        self.nickname = nickname.text.strip('\'"') if nickname else None
+        self.nickname = nickname.text.strip('\'"') if nickname and nickname.text else None
 
         birthday = dom.find('span', {'itemprop': 'birthDate'})
-        if birthday and '-' in birthday.text:
-            self.birthday = datetime.strptime(birthday.text, "%Y-%m-%d").date()
-        else:
-            self.birthday = None
+        self.birthday = None
+        if birthday and birthday.text and '-' in birthday.text:
+            try:
+                self.birthday = datetime.strptime(birthday.text, "%Y-%m-%d").date()
+            except ValueError:
+                pass
 
         birthplace = dom.find('span', {'class': 'item birthplace'})
         if birthplace:
@@ -256,14 +258,14 @@ class Fighter(LazySherdogObject):
         win_graph = dom.find('div', {'class': 'bio_graph'})
         if win_graph:
             counter = win_graph.find('span', {'class': 'counter'})
-            self.wins = int(counter.text) if counter else 0
+            self.wins = int(counter.text) if counter and counter.text else 0
         else:
             self.wins = None
 
         lose_graph = dom.find('div', {'class': 'bio_graph loser'})
         if lose_graph:
             counter = lose_graph.find('span', {'class': 'counter'})
-            self.losses = int(counter.text) if counter else 0
+            self.losses = int(counter.text) if counter and counter.text else 0
         else:
             self.losses = None
 
