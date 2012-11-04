@@ -148,7 +148,7 @@ Sherdog Entities
 
     .. attribute:: fighters
 
-       A 2-tuple containing two :class:`Fighter` objects.
+       A 2-tuple containing two :class:`Fighter` objects for the fighters involved.
 
     .. attribute:: victory_method
 
@@ -195,6 +195,10 @@ Sherdog Entities
     .. attribute:: nickname
 
        A string for the fighter's nickname. (ie. "Huntington Beach Badboy")
+
+    .. attribute:: image_url
+
+       A string with a URL to a thumbnail image for the fighter.
 
     .. attribute:: birthday
 
