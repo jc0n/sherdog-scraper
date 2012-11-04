@@ -13,24 +13,19 @@ High Level API
 
 .. class:: Sherdog
 
-    Sherdog is a singleton which provides a simple API for reading data from Sherdog.com.
+    The Sherdog class is a singleton which provides a simple API for reading data from Sherdog.com.
 
-    Each method returns an object which maps directly to entities from the website
+    Each class method returns an object which maps directly to entities from the website
     (:class:`Event`, :class:`Fighter`, :class:`Organization`). In theory,
     it is similar to an ORM but, in this case, the backend is a website.
 
     .. code-block:: python
 
-       import sherdog
-
-       # Search for Tito Ortiz and Matt Hughes
-       tito = sherdog.Fighter.search('tito ortiz')[0]
-       matt = sherdog.Fighter.search('matt hughes')[0]
-
-       # Alternate way to search fighters
        from sherdog import Sherdog
-       junior = Sherdog.search_fighters('junior dos santos')[0]
 
+       tito = Sherdog.search_fighters('tito ortiz')[0]
+       matt = Sherdog.search_fighters('matt hughes')[0]
+       junior = Sherdog.search_fighters('junior dos santos')[0]
 
        fighters = (tito, matt, junior)
 
@@ -40,8 +35,10 @@ High Level API
 
        best = max(fighters, key=key)
        worst = min(fighters, key=key)
-
        print "%s has more wins than %s!" % (best, worst)
+
+       rounds_fought = sum(f.victory_round for f in matt.fights)
+       print "Matt has fought a total of %d rounds" % rounds_fought
 
 
     .. classmethod:: get_fighter(id_or_url)
@@ -136,7 +133,7 @@ High Level API
 
 
 Sherdog Entities
----------------
+----------------
 
 .. class:: Fight
 
@@ -148,7 +145,7 @@ Sherdog Entities
 
     .. attribute:: fighters
 
-       A 2-tuple containing two :class:`Fighter` objects for the fighters involved.
+       A :meth:`frozenset` containing two :class:`Fighter` objects for the fighters involved.
 
     .. attribute:: victory_method
 
@@ -235,10 +232,6 @@ Sherdog Entities
     .. attribute:: losses
 
        Number of fights lost.
-
-    .. attribute:: events
-
-       List of :class:`Event` objects where the fighter has had fights.
 
     .. attribute:: fights
 
