@@ -5,20 +5,24 @@ from unittest import TestCase, main
 
 from sherdog import Sherdog, Event, Organization, Fighter
 
-FRANK_MIR_ID = 2329
-FRANK_MIR_URL = '/fighter/Frank-Mir-2329'
-
-JUNIOR_DOS_SANTOS_ID = 17272
-
-UFC = Organization('Ultimate-Fighting-Championship-2')
-UFC_ID = 2
-
-UFC146 = Event('UFC-146-Dos-Santos-vs-Mir-20353')
 
 class TestSherdog(TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        cls.frank_mir_id = 2329
+        cls.frank_mir_url = '/fighter/Frank-Mir-2329'
+        cls.frank_mir = Fighter(cls.frank_mir_id)
+
+        cls.junior_dos_santos_id = 17272
+
+        cls.ufc = Organization('Ultimate-Fighting-Championship-2')
+        cls.ufc_id = 2
+
+        cls.ufc146 = Event('UFC-146-Dos-Santos-vs-Mir-20353')
+
     def test_get_fighter(self):
-        for f in map(Sherdog.get_fighter, (FRANK_MIR_ID, FRANK_MIR_URL)):
+        for f in map(Sherdog.get_fighter, (self.frank_mir_id, self.frank_mir_url)):
             self.assertEquals(f.name, u'Frank Mir')
             self.assertEquals(f.birthday, date(1979, 5, 24))
             self.assertEquals(f.height, u'6\'3"')
@@ -33,20 +37,20 @@ class TestSherdog(TestCase):
             self.assertEquals(f.image_url,
                     u'http://www1.cdn.sherdog.com/image_crop/200/300/_images/fighter/20110412122006_20091214122837_IMG_5197.JPG')
 
-            self.assertIn(UFC146, f.events)
+            self.assertIn(self.ufc146, f.events)
             self.assertGreater(len(f.events), 21)
 
     def test_get_event(self):
         event = Sherdog.get_event('UFC-146-Dos-Santos-vs-Mir-20353')
         self.assertEquals(event.name, u'UFC 146 - Dos Santos vs. Mir')
-        self.assertEquals(event.organization, UFC)
+        self.assertEquals(event.organization, self.ufc)
         self.assertEquals(event.date, date(2012, 5, 26))
         self.assertEquals(event.venue, u'MGM Grand Garden Arena')
         self.assertEquals(event.location, u'Las Vegas, Nevada, United States')
         self.assertEquals(len(event.fights), 12)
 
-        frank = Fighter(FRANK_MIR_ID)
-        junior = Fighter(JUNIOR_DOS_SANTOS_ID)
+        frank = Fighter(self.frank_mir_id)
+        junior = Fighter(self.junior_dos_santos_id)
         main_fight = event.fights[-1]
         self.assertEquals(main_fight.fighters, (junior, frank))
         self.assertEquals(main_fight.winner, junior)
@@ -66,20 +70,20 @@ class TestSherdog(TestCase):
         self.assertEquals(other_fight.referee, u'Josh Rosenthal')
 
     def test_get_organization(self):
-        org = Sherdog.get_organization(UFC_ID)
+        org = Sherdog.get_organization(self.ufc_id)
         self.assertEquals(org.name, u'Ultimate Fighting Championship')
         self.assertGreater(len(org.events), 170)
-        self.assertIn(UFC146, org.events)
+        self.assertIn(self.ufc146, org.events)
 
     def test_search_events(self):
         results = Sherdog.search_events('ufc 146')
         self.assertGreaterEqual(len(results), 1)
-        self.assertEquals(results[0], UFC146)
+        self.assertEquals(results[0], self.ufc146)
 
     def test_search_organizations(self):
         results = Sherdog.search_organizations('ultimate fighting championship')
         self.assertGreaterEqual(len(results), 3)
-        self.assertEquals(results[0], UFC)
+        self.assertEquals(results[0], self.ufc)
 
         results = Sherdog.search_organizations('strikeforce')
         self.assertGreaterEqual(len(results), 1)
@@ -88,11 +92,11 @@ class TestSherdog(TestCase):
     def test_search_fighters(self):
         results = Sherdog.search_fighters('frank mir')
         self.assertGreaterEqual(len(results), 1)
-        self.assertEqual(results[0], Fighter(FRANK_MIR_ID))
+        self.assertEqual(results[0], Fighter(self.frank_mir_id))
 
         results = Sherdog.search_fighters('junior dos santos')
         self.assertGreaterEqual(len(results), 1)
-        self.assertEqual(results[0], Fighter(JUNIOR_DOS_SANTOS_ID))
+        self.assertEqual(results[0], Fighter(self.junior_dos_santos_id))
 
     def test_object_cache(self):
         tito1 = Sherdog.search_fighters('tito ortiz')[0]
@@ -102,7 +106,7 @@ class TestSherdog(TestCase):
         self.assertIs(tito1.name, tito2.name)
 
         ufc146 = Sherdog.search_events('ufc 146')[0]
-        self.assertIs(ufc146, UFC146)
+        self.assertIs(ufc146, self.ufc146)
         self.assertIsNot(ufc146, tito1)
 
 
@@ -140,6 +144,13 @@ class TestSherdogErrors(TestCase):
         results = Sherdog.search_fighters('zzz')
         self.assertEquals(len(results), 0)
         self.assertSequenceEqual(results, [])
+
+    def test_invalid_attribute(self):
+        frank_mir_id = 2329
+        f = Fighter(frank_mir_id)
+
+        self.assertRaises(AttributeError, lambda: f.foo)
+        self.assertRaises(KeyError, lambda: f['foo'])
 
 
 if __name__ == '__main__':
