@@ -110,6 +110,11 @@ class LazySherdogObject(object):
         return SHERDOG_URL + self.url
 
     def __new__(cls, id_or_url, *args, **kwargs):
+        """
+        Hook into Sherdog object creation and re-use existing objects if available in order to
+        prevent hitting the website more often than necessary. Uses a weakref dictionary to
+        hold onto objects as long as they are available.
+        """
         if isinstance(id_or_url, basestring):
             id = int(id_or_url[id_or_url.rfind('-') + 1:])
         else:
@@ -225,6 +230,12 @@ class Fighter(LazySherdogObject):
         seconds = (datetime.now().date() - self.birthday).total_seconds()
         return int(math.floor(seconds / _SECONDS_IN_YEAR))
 
+    def fights_in_common(self, other_fighter):
+        assert isinstance(other_fighter, Fighter)
+        result = list(set(self.fights) & set(other_fighter.fights))
+        result.sort()
+        return result
+
     @classmethod
     def _search(cls, query):
         dom = _fetch_and_parse_url(cls._search_url_path % query)
@@ -253,6 +264,9 @@ class Fighter(LazySherdogObject):
 
         nickname = dom.find('span', class_='nickname')
         self.nickname = clean_nickname(nickname.text) if nickname else None
+
+        association = dom.find('span', {'itemprop': 'memberOf'})
+        self.association = association.a.text.strip() if association else None
 
         image = dom.find('img', {'class': 'profile_image photo', 'itemprop': 'image'})
         self.image_url = image.get('src', None) if image else None
@@ -314,17 +328,17 @@ class Fighter(LazySherdogObject):
                 opponent_link = row.find('a', {'href': _FIGHTER_URL_RE})
                 opponent = Fighter(opponent_link['href'], name=opponent_link.text)
 
-                # victory method, referee and victory_round
+                # victory method, referee and round
                 victory_method, referee = list(td[3].strings)[:2]
-                victory_round = int(td[4].text) if td[4].text else None
+                round = int(td[4].text) if td[4].text else None
 
                 fight = Fight(
                     event=event,
                     fighters=frozenset((self, opponent)),
                     referee=referee,
                     victory_method=victory_method,
-                    victory_round=victory_round,
-                    victory_time=parse_fight_time(td[5].text),
+                    round=round,
+                    time=parse_fight_time(td[5].text),
                     winner=pick_winner(fight_result, self, opponent))
                 self.fights.append(fight)
 
@@ -333,8 +347,8 @@ class Fight(namedtuple('Fight', ('event',
                                  'fighters',
                                  'referee',
                                  'victory_method',
-                                 'victory_round',
-                                 'victory_time',
+                                 'round',
+                                 'time',
                                  'winner'))):
 
     def __hash__(self):
@@ -343,14 +357,25 @@ class Fight(namedtuple('Fight', ('event',
     def __eq__(self, other):
         return self.fighters == other.fighters and self.event == other.event
 
+    def __cmp__(self, other):
+        if not isinstance(other, Fight):
+            raise TypeError("cannot compare Fight with %s" % type(other))
+        return cmp(self.event, other.event)
+
     def __str__(self):
         return u' vs. '.join([f.name.split(None, 1)[-1].title()
                                 for f in self.fighters])
 
 
+
 class Event(LazySherdogObject):
     _url_path = '/events/X-%d'
     _search_url_path = '/stats/fightfinder?SearchTxt=%s'
+
+    def __cmp__(self, other):
+        if not isinstance(other, Event):
+            raise TypeError("cannot compare Event with %s" % type(other))
+        return cmp(self.date, other.date)
 
     def _load_properties(self, dom):
         def parse_main_fight(dom):
@@ -368,8 +393,8 @@ class Event(LazySherdogObject):
                         fighters=fighters,
                         referee=None,
                         victory_method=None,
-                        victory_round=None,
-                        victory_time=None,
+                        round=None,
+                        time=None,
                         winner=None)
 
             # parse match, method, ref, round, time
@@ -380,8 +405,8 @@ class Event(LazySherdogObject):
                     fighters=fighters,
                     referee=info['referee'],
                     victory_method=info['method'],
-                    victory_round=int(info['round']),
-                    victory_time=parse_fight_time(info['time']),
+                    round=int(info['round']),
+                    time=parse_fight_time(info['time']),
                     winner=pick_winner(result, left_fighter, right_fighter))
 
         def parse_fight(row):
@@ -397,8 +422,8 @@ class Event(LazySherdogObject):
                         fighters=fighters,
                         referee=None,
                         victory_method=None,
-                        victory_round=None,
-                        victory_time=None,
+                        round=None,
+                        time=None,
                         winner=None)
             else:
                 return Fight(
@@ -406,8 +431,8 @@ class Event(LazySherdogObject):
                         fighters=fighters,
                         referee=td[4].contents[-1].text,
                         victory_method=td[4].contents[0],
-                        victory_round=int(td[5].text),
-                        victory_time=parse_fight_time(td[6].text),
+                        round=int(td[5].text),
+                        time=parse_fight_time(td[6].text),
                         winner=pick_winner(result, left_fighter, right_fighter))
 
         def parse_fights(dom):
